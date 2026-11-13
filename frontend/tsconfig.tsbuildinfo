@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/manifest.test.ts","./src/manifest.ts","./src/ui.tsx","./src/gen/lkube.client.ts","./src/gen/lkube.ts","./src/views/Access.tsx","./src/views/ApplyView.tsx","./src/views/Events.tsx","./src/views/Login.tsx","./src/views/Operators.tsx","./src/views/Overview.tsx","./src/views/Resources.tsx"],"version":"5.6.3"}

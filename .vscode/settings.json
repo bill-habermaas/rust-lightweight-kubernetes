@@ -1,0 +1,12 @@
+{
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.cargo.buildScripts.enable": true,
+  "rust-analyzer.procMacro.enable": true,
+  "[rust]": { "editor.defaultFormatter": "rust-lang.rust-analyzer", "editor.formatOnSave": true },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode", "editor.formatOnSave": true },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode", "editor.formatOnSave": true },
+  "protoc": { "options": ["--proto_path=${workspaceFolder}/proto"] },
+  "files.exclude": { "**/target": true, "**/node_modules": true },
+  "search.exclude": { "**/target": true, "**/node_modules": true, "frontend/src/gen": true },
+  "vitest.rootConfig": "frontend/vite.config.ts"
+}

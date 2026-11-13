@@ -1,0 +1,259 @@
+syntax = "proto3";
+
+// lkube — a lightweight, Kubernetes-like orchestrator.
+// Every command the CLI / UI / operators issue goes through these gRPC services.
+// All calls except AuthService.Login require "authorization: Bearer <token>" metadata.
+package lkube.v1;
+
+message Empty {}
+
+// ---------------------------------------------------------------------------
+// Resource model (generic, like Kubernetes objects)
+// ---------------------------------------------------------------------------
+
+message ObjectMeta {
+  string name = 1;
+  string namespace = 2;
+  map<string, string> labels = 3;
+  map<string, string> annotations = 4;
+  string uid = 5;               // server assigned
+  int64 resource_version = 6;   // server assigned, optimistic concurrency
+  int64 generation = 7;         // incremented whenever spec changes
+  string created_at = 8;        // RFC3339
+  string owner_uid = 9;         // garbage collection: deleted with owner
+}
+
+message Resource {
+  string api_version = 1;
+  string kind = 2;
+  ObjectMeta metadata = 3;
+  string spec_json = 4;   // JSON encoded spec
+  string status_json = 5; // JSON encoded status (written by controllers/operators)
+}
+
+// ---------------------------------------------------------------------------
+// Authentication (token based)
+// ---------------------------------------------------------------------------
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message TokenResponse {
+  string token = 1;
+  int64 expires_at = 2; // unix seconds
+  string token_id = 3;  // jti, used for revocation
+}
+
+message WhoAmIResponse {
+  string subject = 1;
+  repeated string roles = 2;
+  string token_kind = 3; // session | api | operator
+  int64 expires_at = 4;
+}
+
+message CreateTokenRequest {
+  string subject = 1;        // defaults to caller
+  repeated string roles = 2; // must be a subset of the caller's roles (unless admin)
+  int64 ttl_seconds = 3;
+}
+
+message RevokeTokenRequest {
+  string token_id = 1;
+}
+
+service AuthService {
+  rpc Login(LoginRequest) returns (TokenResponse);
+  rpc WhoAmI(Empty) returns (WhoAmIResponse);
+  rpc CreateToken(CreateTokenRequest) returns (TokenResponse);
+  rpc RevokeToken(RevokeTokenRequest) returns (Empty);
+}
+
+// ---------------------------------------------------------------------------
+// Authorization administration (RBAC)
+// ---------------------------------------------------------------------------
+
+// A rule grants verbs on kinds in namespaces. "*" is a wildcard.
+// "*" in kinds matches every resource kind but NOT the system:* kinds
+// (system:users, system:roles, system:tokens, system:operators); use "system:*" for those.
+// Empty namespaces = all namespaces.
+message PolicyRule {
+  repeated string verbs = 1;
+  repeated string kinds = 2;
+  repeated string namespaces = 3;
+}
+
+message Role {
+  string name = 1;
+  repeated PolicyRule rules = 2;
+  bool builtin = 3;
+}
+
+message User {
+  string username = 1;
+  repeated string roles = 2;
+  string created_at = 3;
+}
+
+message CreateUserRequest {
+  string username = 1;
+  string password = 2;
+  repeated string roles = 3;
+}
+
+message SetUserRolesRequest {
+  string username = 1;
+  repeated string roles = 2;
+}
+
+message NameRequest {
+  string name = 1;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+}
+
+service AdminService {
+  rpc CreateUser(CreateUserRequest) returns (User);
+  rpc ListUsers(Empty) returns (ListUsersResponse);
+  rpc SetUserRoles(SetUserRolesRequest) returns (User);
+  rpc DeleteUser(NameRequest) returns (Empty);
+  rpc PutRole(Role) returns (Role);
+  rpc ListRoles(Empty) returns (ListRolesResponse);
+  rpc DeleteRole(NameRequest) returns (Empty);
+}
+
+// ---------------------------------------------------------------------------
+// Cluster API (the "kubectl" surface)
+// ---------------------------------------------------------------------------
+
+message ApplyRequest {
+  Resource resource = 1;
+}
+
+message ResourceRef {
+  string kind = 1;
+  string namespace = 2;
+  string name = 3;
+}
+
+message ListRequest {
+  string kind = 1;
+  string namespace = 2; // empty = all namespaces
+  map<string, string> label_selector = 3;
+}
+
+message ListResponse {
+  repeated Resource items = 1;
+}
+
+message ScaleRequest {
+  string namespace = 1;
+  string name = 2;
+  int32 replicas = 3;
+}
+
+message UpdateStatusRequest {
+  ResourceRef target = 1;
+  string status_json = 2;
+}
+
+message WatchRequest {
+  repeated string kinds = 1; // empty = all kinds
+  string namespace = 2;      // empty = all namespaces
+  bool send_initial = 3;     // emit ADDED for existing objects first
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  ADDED = 1;
+  MODIFIED = 2;
+  DELETED = 3;
+}
+
+message WatchEvent {
+  EventType type = 1;
+  Resource resource = 2;
+}
+
+message LogsRequest {
+  string namespace = 1;
+  string pod = 2;
+  string container = 3; // defaults to first container
+  int32 tail = 4;       // defaults to 200
+}
+
+message LogsResponse {
+  string text = 1;
+}
+
+message KindInfo {
+  string kind = 1;
+  bool namespaced = 2;
+  bool builtin = 3;
+  string api_version = 4;
+}
+
+message ListKindsResponse {
+  repeated KindInfo kinds = 1;
+}
+
+service ClusterService {
+  rpc Apply(ApplyRequest) returns (Resource);
+  rpc Get(ResourceRef) returns (Resource);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Delete(ResourceRef) returns (Empty);
+  rpc Scale(ScaleRequest) returns (Resource);
+  rpc UpdateStatus(UpdateStatusRequest) returns (Resource);
+  rpc Watch(WatchRequest) returns (stream WatchEvent);
+  rpc Logs(LogsRequest) returns (LogsResponse);
+  rpc ListKinds(Empty) returns (ListKindsResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Operators: register CustomResourceDefinitions and obtain a scoped token.
+// The operator then uses ClusterService.Watch / Apply / UpdateStatus.
+// ---------------------------------------------------------------------------
+
+message CrdSpec {
+  string kind = 1;         // e.g. "WebApp"
+  bool namespaced = 2;
+  string api_version = 3;  // e.g. "example.com/v1"
+  string schema_json = 4;  // optional: {"required":[..],"properties":{"x":{"type":"string"}}}
+}
+
+message RegisterOperatorRequest {
+  string name = 1;
+  repeated CrdSpec crds = 2;
+  repeated PolicyRule extra_rules = 3; // must be a subset of the caller's permissions
+  int64 token_ttl_seconds = 4;
+}
+
+message OperatorInfo {
+  string name = 1;
+  repeated string kinds = 2;
+  string registered_at = 3;
+  string role = 4;
+  bool builtin = 5;
+}
+
+message RegisterOperatorResponse {
+  OperatorInfo operator = 1;
+  string token = 2;
+}
+
+message ListOperatorsResponse {
+  repeated OperatorInfo operators = 1;
+}
+
+service OperatorService {
+  rpc Register(RegisterOperatorRequest) returns (RegisterOperatorResponse);
+  rpc List(Empty) returns (ListOperatorsResponse);
+  rpc Unregister(NameRequest) returns (Empty);
+}

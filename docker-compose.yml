@@ -1,0 +1,66 @@
+name: lkube
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  lkube-server:
+    build: .
+    image: lkube/server:latest
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      LKUBE_STORE: mongo
+      LKUBE_MONGO_URI: mongodb://mongo:27017
+      LKUBE_MONGO_DB: lkube
+      LKUBE_JWT_SECRET: ${LKUBE_JWT_SECRET:-change-me-in-production}
+      LKUBE_TOKEN_TTL_SECS: ${LKUBE_TOKEN_TTL_SECS:-3600}
+      LKUBE_ADMIN_USER: ${LKUBE_ADMIN_USER:-admin}
+      LKUBE_ADMIN_PASSWORD: ${LKUBE_ADMIN_PASSWORD:-admin12345}
+      LKUBE_NODE_NAME: node-1
+      LKUBE_RUNTIME: ${LKUBE_RUNTIME:-docker}   # set to "mock" to run without Docker access
+      LKUBE_DOCKER_NETWORK: lkube-pods          # pod containers join this network
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "50051:50051"   # native gRPC + gRPC-Web
+    networks: [default, pods]
+
+  ui:
+    build: ./frontend
+    image: lkube/ui:latest
+    restart: unless-stopped
+    depends_on: [lkube-server]
+    ports:
+      - "8080:80"
+
+  # Optional: the example out-of-process operator.  docker compose --profile operators up
+  webapp-operator:
+    image: lkube/server:latest
+    profiles: [operators]
+    depends_on: [lkube-server]
+    entrypoint: ["/usr/local/bin/webapp-operator"]
+    restart: on-failure
+    environment:
+      LKUBE_ENDPOINT: http://lkube-server:50051
+      LKUBE_USER: ${LKUBE_ADMIN_USER:-admin}
+      LKUBE_PASSWORD: ${LKUBE_ADMIN_PASSWORD:-admin12345}
+      RUST_LOG: info
+
+networks:
+  pods:
+    name: lkube-pods
+
+volumes:
+  mongo-data:

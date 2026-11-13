@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug lkube-server (memory store, mock runtime)",
+      "cargo": { "args": ["build", "--bin=lkube-server", "--package=lkube"], "filter": { "name": "lkube-server", "kind": "bin" } },
+      "env": { "LKUBE_STORE": "memory", "LKUBE_RUNTIME": "mock", "LKUBE_NODE_NAME": "node-1", "RUST_LOG": "info,lkube=debug" },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug lkube-server (MongoDB + Docker)",
+      "cargo": { "args": ["build", "--bin=lkube-server", "--package=lkube"], "filter": { "name": "lkube-server", "kind": "bin" } },
+      "env": { "LKUBE_STORE": "mongo", "LKUBE_MONGO_URI": "mongodb://localhost:27017", "LKUBE_RUNTIME": "docker", "LKUBE_NODE_NAME": "node-1", "RUST_LOG": "info,lkube=debug" },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests (lib)",
+      "cargo": { "args": ["test", "--no-run", "--lib", "--package=lkube"], "filter": { "name": "lkube", "kind": "lib" } },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug gRPC API tests",
+      "cargo": { "args": ["test", "--no-run", "--test=grpc_api", "--package=lkube"], "filter": { "name": "grpc_api", "kind": "test" } },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug example webapp operator",
+      "cargo": { "args": ["build", "--example=webapp_operator", "--package=lkube"], "filter": { "name": "webapp_operator", "kind": "example" } },
+      "env": { "LKUBE_ENDPOINT": "http://localhost:50051", "LKUBE_USER": "admin", "LKUBE_PASSWORD": "admin12345", "RUST_LOG": "info" },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Debug UI (Chrome, vite dev server)",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend"
+    }
+  ],
+  "compounds": [
+    { "name": "Server + UI", "configurations": ["Debug lkube-server (memory store, mock runtime)", "Debug UI (Chrome, vite dev server)"] }
+  ]
+}
